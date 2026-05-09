@@ -153,6 +153,13 @@ static inline void i2c_sf32lb_disable_dma_irqs(I2C_TypeDef *i2c)
 	ll_i2c_disable_it_bed(i2c);
 }
 
+static inline void i2c_sf32lb_reset_msg_state(struct i2c_sf32lb_data *data)
+{
+	data->current_msg = NULL;
+	data->buf_ptr = NULL;
+	data->remaining = 0U;
+}
+
 static void i2c_sf32lb_tx_helper(const struct device *dev, uint32_t sr)
 {
 	const struct i2c_sf32lb_config *config = dev->config;
@@ -165,7 +172,7 @@ static void i2c_sf32lb_tx_helper(const struct device *dev, uint32_t sr)
 		if (IS_BIT_SET(sr, I2C_SR_NACK_Pos)) {
 			data->error = -EIO;
 			i2c_sf32lb_disable_all_irqs(i2c);
-			data->current_msg = NULL;
+			i2c_sf32lb_reset_msg_state(data);
 			k_sem_give(&data->i2c_compl);
 			return;
 		}
@@ -182,7 +189,7 @@ static void i2c_sf32lb_tx_helper(const struct device *dev, uint32_t sr)
 			i2c_sf32lb_write_tcr(i2c, tcr);
 		} else {
 			i2c_sf32lb_disable_all_irqs(i2c);
-			data->current_msg = NULL;
+			i2c_sf32lb_reset_msg_state(data);
 			k_sem_give(&data->i2c_compl);
 		}
 	}
@@ -190,7 +197,7 @@ static void i2c_sf32lb_tx_helper(const struct device *dev, uint32_t sr)
 	if (IS_BIT_SET(sr, I2C_SR_MSD_Pos) && (data->remaining == 0)) {
 		ll_i2c_clear_flag_msd(i2c);
 		i2c_sf32lb_disable_all_irqs(i2c);
-		data->current_msg = NULL;
+		i2c_sf32lb_reset_msg_state(data);
 		k_sem_give(&data->i2c_compl);
 	}
 }
@@ -208,7 +215,8 @@ static void i2c_sf32lb_rx_helper(const struct device *dev, uint32_t sr)
 		if (data->remaining > 0) {
 			if (IS_BIT_SET(sr, I2C_SR_NACK_Pos) && data->remaining > 1) {
 				data->error = -EIO;
-				data->current_msg = NULL;
+				i2c_sf32lb_disable_all_irqs(i2c);
+				i2c_sf32lb_reset_msg_state(data);
 				k_sem_give(&data->i2c_compl);
 				return;
 			}
@@ -232,7 +240,7 @@ static void i2c_sf32lb_rx_helper(const struct device *dev, uint32_t sr)
 	if (IS_BIT_SET(sr, I2C_SR_MSD_Pos) && (data->remaining == 0)) {
 		ll_i2c_clear_flag_msd(i2c);
 		i2c_sf32lb_disable_all_irqs(i2c);
-		data->current_msg = NULL;
+		i2c_sf32lb_reset_msg_state(data);
 		k_sem_give(&data->i2c_compl);
 	}
 }
@@ -248,7 +256,7 @@ static void i2c_sf32lb_isr(const struct device *dev)
 		ll_i2c_clear_flag_bed(i2c);
 		data->error = -EIO;
 		i2c_sf32lb_disable_all_irqs(i2c);
-		data->current_msg = NULL;
+		i2c_sf32lb_reset_msg_state(data);
 		k_sem_give(&data->i2c_compl);
 		return;
 	}
@@ -398,6 +406,7 @@ static int i2c_sf32lb_master_send_dma(const struct device *dev, uint16_t addr, s
 		/* Zero-length message already handled in send_addr */
 		return ret;
 	}
+	k_sem_reset(&data->i2c_compl);
 
 	if (stop_needed) {
 		ll_i2c_config_dma_last(i2c, 1, 0);
@@ -480,6 +489,7 @@ static int i2c_sf32lb_master_recv_dma(const struct device *dev, uint16_t addr, s
 	if (msg->len == 0) {
 		return 0;
 	}
+	k_sem_reset(&data->i2c_compl);
 
 	if (stop_needed) {
 		ll_i2c_config_dma_last(i2c, 1, 1);
@@ -563,6 +573,7 @@ static int i2c_sf32lb_master_send(const struct device *dev, uint16_t addr, struc
 	data->remaining = msg->len;
 	data->is_tx = true;
 	data->error = 0;
+	k_sem_reset(&data->i2c_compl);
 
 	ll_i2c_clear_flag_te(i2c);
 
@@ -580,7 +591,7 @@ static int i2c_sf32lb_master_send(const struct device *dev, uint16_t addr, struc
 	if (k_sem_take(&data->i2c_compl, K_MSEC(SF32LB_I2C_TIMEOUT_MAX_US / 1000)) != 0) {
 		LOG_ERR("master sent timeout");
 		i2c_sf32lb_disable_all_irqs(i2c);
-		data->current_msg = NULL;
+		i2c_sf32lb_reset_msg_state(data);
 		return -ETIMEDOUT;
 	}
 
@@ -618,6 +629,7 @@ static int i2c_sf32lb_master_recv(const struct device *dev, uint16_t addr, struc
 	data->remaining = msg->len;
 	data->is_tx = false;
 	data->error = 0;
+	k_sem_reset(&data->i2c_compl);
 
 	ll_i2c_clear_flag_rf(i2c);
 
@@ -636,7 +648,7 @@ static int i2c_sf32lb_master_recv(const struct device *dev, uint16_t addr, struc
 	if (k_sem_take(&data->i2c_compl, K_MSEC(SF32LB_I2C_TIMEOUT_MAX_US / 1000)) != 0) {
 		LOG_ERR("master recv timeout");
 		i2c_sf32lb_disable_all_irqs(i2c);
-		data->current_msg = NULL;
+		i2c_sf32lb_reset_msg_state(data);
 		return -ETIMEDOUT;
 	}
 
@@ -742,7 +754,7 @@ static int i2c_sf32lb_transfer(const struct device *dev, struct i2c_msg *msgs, u
 	};
 
 	for (uint8_t i = 0U; i < num_msgs; i++) {
-		if (I2C_MSG_ADDR_10_BITS & msgs->flags) {
+		if (I2C_MSG_ADDR_10_BITS & msgs[i].flags) {
 			ret = -ENOTSUP;
 			break;
 		}
