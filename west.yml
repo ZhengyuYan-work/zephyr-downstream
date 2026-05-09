@@ -415,6 +415,11 @@ manifest:
     - name: zcbor
       revision: 9164bd18dcd88ff9d9ef98279501fc1093571017
       path: modules/lib/zcbor
+      # Arduino API repository.
+    - name: Arduino-Core-Zephyr
+      path: modules/lib/Arduino-Zephyr-API
+      revision: next
+      url: https://github.com/zephyrproject-rtos/gsoc-2022-arduino-core
   # zephyr-keep-sorted-stop
 
   self:

@@ -20,10 +20,20 @@
 
 unset(CMAKE_C_COMPILER_LAUNCHER)
 unset(CMAKE_DEPFILE_FLAGS_C)
+
+# On Windows, CMAKE_COMMAND may expand to a path with spaces (e.g. "C:/Program Files/...").
+# When Ninja wraps shell-redirected commands in cmd.exe /C "...", an unquoted path-with-spaces
+# is split at the first space, causing the build to fail. Quote the path explicitly.
+if(CMAKE_HOST_WIN32)
+    set(_llext_edk_cmake_cmd "\"${CMAKE_COMMAND}\"")
+else()
+    set(_llext_edk_cmake_cmd "${CMAKE_COMMAND}")
+endif()
+
 set(CMAKE_C_COMPILE_OBJECT
-    "${CMAKE_COMMAND} -E echo '<DEFINES>' > ${CMAKE_CURRENT_BINARY_DIR}/c_defs.txt"
-    "${CMAKE_COMMAND} -E echo '<INCLUDES>' > ${CMAKE_CURRENT_BINARY_DIR}/c_incs.txt"
-    "${CMAKE_COMMAND} -E echo '<FLAGS>' > ${CMAKE_CURRENT_BINARY_DIR}/c_flags.txt"
+    "${_llext_edk_cmake_cmd} -E echo '<DEFINES>' > ${CMAKE_CURRENT_BINARY_DIR}/c_defs.txt"
+    "${_llext_edk_cmake_cmd} -E echo '<INCLUDES>' > ${CMAKE_CURRENT_BINARY_DIR}/c_incs.txt"
+    "${_llext_edk_cmake_cmd} -E echo '<FLAGS>' > ${CMAKE_CURRENT_BINARY_DIR}/c_flags.txt"
     "${CMAKE_C_COMPILE_OBJECT}")
 
 add_library(llext_edk_build_props ${ZEPHYR_BASE}/misc/empty_file.c)

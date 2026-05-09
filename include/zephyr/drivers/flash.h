@@ -289,6 +289,7 @@ static inline int z_impl_flash_read(const struct device *dev, off_t offset,
  *
  *  @return  0 on success, negative errno code on fail.
  */
+#include <zephyr/kernel.h>
 __syscall int flash_write(const struct device *dev, off_t offset,
 			  const void *data,
 			  size_t len);
@@ -296,7 +297,35 @@ __syscall int flash_write(const struct device *dev, off_t offset,
 static inline int z_impl_flash_write(const struct device *dev, off_t offset,
 				     const void *data, size_t len)
 {
-	return DEVICE_API_GET(flash, dev)->write(dev, offset, data, len);
+	const struct flash_driver_api *api =
+		(const struct flash_driver_api *)dev->api;
+	int rc;
+printk("addr of api->write: %p\n", (void *)api->write);
+k_sleep(K_MSEC(100));
+printk("addr of dev: %p, ""offset: %d, data: %p, len: %d\n", (void *)dev, (int)offset, data, (int)len);
+k_sleep(K_MSEC(100));
+
+// at flash region, move to ram first
+void *flash_low_bound = (void *)0x12000000;
+void *flash_high_bound = (void *)(0x12000000 + 16*1024*1024);
+if(data >= flash_low_bound && data < flash_high_bound) {
+	// printk("data to write is in flash, copy to ram first\n");
+	uint8_t ram_buf[256];
+	if (len > sizeof(ram_buf)) {
+		// printk("failed to allocate ram buffer\n");
+		return -ENOMEM;
+	}
+	// printk("allocated ram buffer at %p\n", ram_buf);
+	for(int i=0;i<len;i++) {
+		ram_buf[i] = ((uint8_t *)data)[i];
+	}
+	data = ram_buf;
+	printk("copied data to ram buffer, now data points to %p\n", data);
+}
+
+	rc = api->write(dev, offset, data, len);
+
+	return rc;
 }
 
 /**
