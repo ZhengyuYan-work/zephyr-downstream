@@ -206,7 +206,7 @@ static void i2c_sf32lb_rx_helper(const struct device *dev, uint32_t sr)
 		ll_i2c_clear_flag_rf(i2c);
 
 		if (data->remaining > 0) {
-			if (IS_BIT_SET(sr, I2C_SR_NACK_Pos)) {
+			if (IS_BIT_SET(sr, I2C_SR_NACK_Pos) && data->remaining > 1) {
 				data->error = -EIO;
 				data->current_msg = NULL;
 				k_sem_give(&data->i2c_compl);
@@ -216,14 +216,16 @@ static void i2c_sf32lb_rx_helper(const struct device *dev, uint32_t sr)
 			data->buf_ptr++;
 			data->remaining--;
 
-			tcr = I2C_TCR_TB;
-			if (data->remaining == 0) {
-				if (i2c_is_stop_op(data->current_msg)) {
-					tcr |= I2C_TCR_STOP;
+			if (data->remaining > 0) {
+				tcr = I2C_TCR_TB;
+				if (data->remaining == 1) {
+					if (i2c_is_stop_op(data->current_msg)) {
+						tcr |= I2C_TCR_STOP;
+					}
+					tcr |= I2C_TCR_NACK;
 				}
-				tcr |= I2C_TCR_NACK;
+				i2c_sf32lb_write_tcr(i2c, tcr);
 			}
-			i2c_sf32lb_write_tcr(i2c, tcr);
 		}
 	}
 
@@ -598,6 +600,7 @@ static int i2c_sf32lb_master_recv(const struct device *dev, uint16_t addr, struc
 	struct i2c_sf32lb_data *data = dev->data;
 	I2C_TypeDef *i2c = i2c_sf32lb_regs(cfg);
 	uint32_t tcr = I2C_TCR_TB;
+	bool stop_needed = i2c_is_stop_op(msg);
 
 	data->rw_flags = msg->flags & I2C_MSG_RW_MASK;
 
@@ -617,6 +620,13 @@ static int i2c_sf32lb_master_recv(const struct device *dev, uint16_t addr, struc
 	data->error = 0;
 
 	ll_i2c_clear_flag_rf(i2c);
+
+	if (data->remaining == 1) {
+		if (stop_needed) {
+			tcr |= I2C_TCR_STOP;
+		}
+		tcr |= I2C_TCR_NACK;
+	}
 
 	i2c_sf32lb_write_tcr(i2c, tcr);
 
