@@ -5,10 +5,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stddef.h>
 #include <zephyr/kernel.h>
 #include <zephyr/ztest.h>
 #include <zephyr/drivers/i2s.h>
 #include <zephyr/sys/iterable_sections.h>
+#include <zephyr/sys/util.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(i2s_add, LOG_LEVEL_INF);
@@ -90,12 +92,10 @@ static const struct i2s_config default_i2s_cfg = {
 	.mem_slab = &tx_0_mem_slab,
 };
 
-#if (CONFIG_I2S_TEST_ALLOWED_DATA_OFFSET > 0)
 /* Data offset may differ when test uses I2S with different configuration. */
 static int offset;
 static int16_t word_size_bytes;
 static int16_t sample_in_bytes;
-#endif
 
 /* Fill in TX buffer with test samples. */
 static void fill_buf(int16_t *tx_block, uint8_t word_size)
