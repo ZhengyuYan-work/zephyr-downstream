@@ -14,6 +14,9 @@
 
 #include <register.h>
 
+/* LL gap: HXT48 request/ready control is in HPSYS_AON, not yet covered by
+ * ll_rcc.h. Once ll_rcc.h adds HXT48 helpers, switch to LL API here.
+ */
 #define HPSYS_AON_ACR offsetof(HPSYS_AON_TypeDef, ACR)
 
 struct clock_control_sf32lb_hxt48_config {
