@@ -23,6 +23,8 @@ manifest:
       url-base: https://github.com/zephyrproject-rtos
     - name: babblesim
       url-base: https://github.com/BabbleSim
+    - name: abcdaaa1111
+      url-base: https://github.com/abcdaaa1111
 
   group-filter: [-babblesim, -optional, -testing]
 
@@ -243,7 +245,8 @@ manifest:
       groups:
         - hal
     - name: hal_sifli
-      revision: 4881cabb0f1d65504b07e2464fab3de7f3828b16
+      remote: abcdaaa1111
+      revision: dev/ll-refactor
       path: modules/hal/sifli
       groups:
         - hal
