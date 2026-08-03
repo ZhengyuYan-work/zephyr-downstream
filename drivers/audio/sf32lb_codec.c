@@ -20,7 +20,7 @@
 #include <zephyr/cache.h>
 #include <zephyr/logging/log.h>
 
-#include <register.h>
+#include <ll_audcodec.h>
 
 LOG_MODULE_REGISTER(sifli_codec, CONFIG_AUDIO_CODEC_LOG_LEVEL);
 
