@@ -11,32 +11,24 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
-#include <zephyr/sys/util.h>
 
-#include <register.h>
+#include <ll_gptim.h>
 
-#define GPT_CCMRX(ch) (GPT_CCMR1 + (((ch) >> 1U) << 2))
-#define CCRX(ch)      (GPT_CCR1 + ((ch) << 2U))
+/* LL gap: ll_gptim.h does not expose per-channel OC mode, preload, or polarity
+ * configuration helpers. Map channel to CCMR register and field positions.
+ */
+#define GPT_CCMR_CH_REG(tim, ch)  ((ch) <= 1U ? &(tim)->CCMR1 : &(tim)->CCMR2)
+#define GPT_CCMR_CH_OCM_Pos(ch)   (((ch) & 1U) ? GPT_CCMR1_OC2M_Pos : GPT_CCMR1_OC1M_Pos)
+#define GPT_CCMR_CH_OCM_Msk(ch)   (((ch) & 1U) ? GPT_CCMR1_OC2M_Msk : GPT_CCMR1_OC1M_Msk)
+#define GPT_CCMR_CH_OCPE(ch)      (((ch) & 1U) ? GPT_CCMR1_OC2PE : GPT_CCMR1_OC1PE)
 
-#define GPT_CR1   offsetof(GPT_TypeDef, CR1)
-#define GPT_PSC   offsetof(GPT_TypeDef, PSC)
-#define GPT_ARR   offsetof(GPT_TypeDef, ARR)
-#define GPT_CCR1  offsetof(GPT_TypeDef, CCR1)
-#define GPT_CCER  offsetof(GPT_TypeDef, CCER)
-#define GPT_CCMR1 offsetof(GPT_TypeDef, CCMR1)
-#define GPT_EGR   offsetof(GPT_TypeDef, EGR)
-
-#define GPT_CCMR1_OC1M_PWM1 FIELD_PREP(GPT_CCMR1_OC1M, 6U)
-#define GPT_CCMR1_OC2M_PWM1 FIELD_PREP(GPT_CCMR1_OC2M, 6U)
-#define GPT_CCMR2_OC3M_PWM1 FIELD_PREP(GPT_CCMR2_OC3M, 6U)
-#define GPT_CCMR2_OC4M_PWM1 FIELD_PREP(GPT_CCMR2_OC4M, 6U)
-
-#define MAX_CH_NUM (4U)
+#define GPT_OCMODE_PWM1 LL_GPTIM_OC_MODE_PWM1
+#define MAX_CH_NUM      4U
 
 LOG_MODULE_REGISTER(pwm_sf32lb, CONFIG_PWM_LOG_LEVEL);
 
 struct pwm_sf32lb_config {
-	uintptr_t base;
+	GPT_TypeDef *tim;
 	const struct pinctrl_dev_config *pcfg;
 	struct sf32lb_clock_dt_spec clock;
 	uint16_t prescaler;
@@ -46,9 +38,9 @@ static int pwm_sf32lb_set_cycles(const struct device *dev, uint32_t channel, uin
 				 uint32_t pulse_cycles, pwm_flags_t flags)
 {
 	const struct pwm_sf32lb_config *config = dev->config;
-	uint8_t pos;
-
-	pos = channel * 4U;
+	GPT_TypeDef *tim = config->tim;
+	__IOM uint32_t *ccmr_reg;
+	uint32_t ccmr;
 
 	if (channel >= MAX_CH_NUM) {
 		LOG_ERR("Invalid PWM channel: %u. Must be 0-3.", channel);
@@ -63,46 +55,31 @@ static int pwm_sf32lb_set_cycles(const struct device *dev, uint32_t channel, uin
 	}
 
 	if (period_cycles == 0U) {
-		sys_clear_bit(config->base + GPT_CCER, pos);
+		ll_gptim_disable_channel(tim, channel + 1U);
 		return 0;
 	}
 
-	sys_clear_bit(config->base + GPT_CCER, pos);
-	sys_clear_bits(config->base + GPT_CCER, GPT_CCER_CC1P << pos);
+	ll_gptim_disable_channel(tim, channel + 1U);
 
+	/* LL gap: no ll_gptim_set_channel_polarity() in ll_gptim.h */
 	if (flags & PWM_POLARITY_INVERTED) {
-		sys_set_bits(config->base + GPT_CCER, GPT_CCER_CC1P << pos);
+		tim->CCER |= GPT_CCER_CC1P << (channel * 4U);
+	} else {
+		tim->CCER &= ~(GPT_CCER_CC1P << (channel * 4U));
 	}
 
-	sys_write32(period_cycles - 1, config->base + GPT_ARR);
-	sys_write32(pulse_cycles, config->base + CCRX(channel));
+	ll_gptim_set_auto_reload(tim, (uint16_t)(period_cycles - 1U));
+	ll_gptim_set_compare(tim, channel + 1U, (uint16_t)pulse_cycles);
 
-	switch (channel) {
-	case 0:
-		sys_clear_bits(config->base + GPT_CCMRX(channel), GPT_CCMR1_OC1M);
-		sys_set_bits(config->base + GPT_CCMRX(channel), GPT_CCMR1_OC1PE);
-		sys_set_bits(config->base + GPT_CCMRX(channel), GPT_CCMR1_OC1M_PWM1);
-		break;
-	case 1:
-		sys_clear_bits(config->base + GPT_CCMRX(channel), GPT_CCMR1_OC2M);
-		sys_set_bits(config->base + GPT_CCMRX(channel), GPT_CCMR1_OC2PE);
-		sys_set_bits(config->base + GPT_CCMRX(channel), GPT_CCMR1_OC2M_PWM1);
-		break;
-	case 2:
-		sys_clear_bits(config->base + GPT_CCMRX(channel), GPT_CCMR2_OC3M);
-		sys_set_bits(config->base + GPT_CCMRX(channel), GPT_CCMR2_OC3PE);
-		sys_set_bits(config->base + GPT_CCMRX(channel), GPT_CCMR2_OC3M_PWM1);
-		break;
-	case 3:
-		sys_clear_bits(config->base + GPT_CCMRX(channel), GPT_CCMR2_OC4M);
-		sys_set_bits(config->base + GPT_CCMRX(channel), GPT_CCMR2_OC4PE);
-		sys_set_bits(config->base + GPT_CCMRX(channel), GPT_CCMR2_OC4M_PWM1);
-		break;
-	default:
-		return -EINVAL;
-	}
+	/* LL gap: ll_gptim.h has no per-channel OC mode / preload setters */
+	ccmr_reg = GPT_CCMR_CH_REG(tim, channel);
+	ccmr = *ccmr_reg;
+	ccmr &= ~GPT_CCMR_CH_OCM_Msk(channel);
+	ccmr |= FIELD_PREP(GPT_CCMR_CH_OCM_Msk(channel), GPT_OCMODE_PWM1);
+	ccmr |= GPT_CCMR_CH_OCPE(channel);
+	*ccmr_reg = ccmr;
 
-	sys_set_bit(config->base + GPT_CCER, pos);
+	ll_gptim_enable_channel(tim, channel + 1U);
 
 	return 0;
 }
@@ -132,6 +109,7 @@ static int pwm_sf32lb_get_cycles_per_sec(const struct device *dev, uint32_t chan
 static int pwm_sf32lb_init(const struct device *dev)
 {
 	const struct pwm_sf32lb_config *config = dev->config;
+	GPT_TypeDef *tim = config->tim;
 	int ret;
 
 	if (!sf32lb_clock_is_ready_dt(&config->clock)) {
@@ -149,10 +127,9 @@ static int pwm_sf32lb_init(const struct device *dev)
 		return ret;
 	}
 
-	sys_write32(config->prescaler, config->base + GPT_PSC);
-	sys_set_bit(config->base + GPT_EGR, GPT_EGR_UG_Pos);
-
-	sys_set_bit(config->base + GPT_CR1, GPT_CR1_CEN_Pos);
+	ll_gptim_set_prescaler(tim, config->prescaler);
+	ll_gptim_generate_update(tim);
+	ll_gptim_enable(tim);
 
 	return ret;
 }
@@ -165,7 +142,7 @@ static DEVICE_API(pwm, pwm_sf32lb_driver_api) = {
 #define PWM_SF32LB_DEFINE(n)                                                                       \
 	PINCTRL_DT_INST_DEFINE(n);                                                                 \
 	static const struct pwm_sf32lb_config pwm_sf32lb_config_##n = {                            \
-		.base = DT_REG_ADDR(DT_INST_PARENT(n)),                                            \
+		.tim = (GPT_TypeDef *)DT_REG_ADDR(DT_INST_PARENT(n)),                              \
 		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),                                         \
 		.clock = SF32LB_CLOCK_DT_INST_PARENT_SPEC_GET(n),                                  \
 		.prescaler = DT_PROP(DT_INST_PARENT(n), sifli_prescaler),                          \
