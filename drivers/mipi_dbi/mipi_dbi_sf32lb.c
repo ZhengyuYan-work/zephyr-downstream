@@ -15,7 +15,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/byteorder.h>
 
-#include <register.h>
+#include <ll_lcdc.h>
 
 LOG_MODULE_REGISTER(mipi_dbi_sf32lb, CONFIG_MIPI_DBI_LOG_LEVEL);
 
