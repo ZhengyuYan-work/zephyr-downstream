@@ -15,7 +15,7 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/toolchain.h>
 
-#include <register.h>
+#include <ll_pmuc.h>
 
 LOG_MODULE_REGISTER(regulator_sf32lb_ldo, CONFIG_REGULATOR_LOG_LEVEL);
 
