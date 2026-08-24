@@ -1,0 +1,7 @@
+/*
+ * Copyright (c) 2025 Core Devices LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Temporary SF32LB57X bring-up reuses the SF32LB52X peripheral map. */
+#include <sifli/sf32lb52x.dtsi>

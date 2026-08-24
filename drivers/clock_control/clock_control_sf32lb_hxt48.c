@@ -5,6 +5,19 @@
 
 #define DT_DRV_COMPAT sifli_sf32lb_hxt48
 
+#if defined(CONFIG_SOC_SERIES_SF32LB57X)
+#include <stdint.h>
+#if !defined(__IO)
+#define __IO volatile
+#define SF32LB57X_LOCAL_IO_DEFINED
+#endif
+#include <sf32lb57x/hpsys_aon.h>
+#if defined(SF32LB57X_LOCAL_IO_DEFINED)
+#undef __IO
+#undef SF32LB57X_LOCAL_IO_DEFINED
+#endif
+#endif
+
 #include <stdint.h>
 
 #include <zephyr/arch/cpu.h>
@@ -12,7 +25,11 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/clock_control.h>
 
+#if defined(CONFIG_SOC_SERIES_SF32LB57X)
+extern void debug_temp_printf(const char *fmt, ...);
+#else
 #include <ll_hpsys_aon.h>
+#endif
 
 struct clock_control_sf32lb_hxt48_config {
 	uintptr_t aon;
@@ -26,10 +43,22 @@ static int clock_control_sf32lb_hxt48_on(const struct device *dev, clock_control
 
 	ARG_UNUSED(sys);
 
+#if defined(CONFIG_SOC_SERIES_SF32LB57X)
+	debug_temp_printf("ARC@%p\n", &aon->ACR);
+	debug_temp_printf("HXT enter acr=%08x\n", aon->ACR);
+	aon->ACR |= HPSYS_AON_ACR_HRC48_REQ |
+		    HPSYS_AON_ACR_HXT48_REQ |
+		    HPSYS_AON_ACR_PWR_REQ;
+	debug_temp_printf("HXT req acr=%08x\n", aon->ACR);
+	while ((aon->ACR & HPSYS_AON_ACR_HXT48_RDY) == 0U) {
+	}
+	debug_temp_printf("HXT ready acr=%08x\n", aon->ACR);
+#else
 	ll_aon_hxt48_req_set(aon, LL_AON_PM_ACTIVE);
 
 	while (!ll_aon_hxt48_is_ready(aon)) {
 	}
+#endif
 
 	return 0;
 }
@@ -41,7 +70,11 @@ static int clock_control_sf32lb_hxt48_off(const struct device *dev, clock_contro
 
 	ARG_UNUSED(sys);
 
+#if defined(CONFIG_SOC_SERIES_SF32LB57X)
+	aon->ACR &= ~HPSYS_AON_ACR_HXT48_REQ;
+#else
 	ll_aon_hxt48_req_clear(aon, LL_AON_PM_ACTIVE);
+#endif
 
 	return 0;
 }
@@ -54,7 +87,11 @@ static enum clock_control_status clock_control_sf32lb_hxt48_get_status(const str
 
 	ARG_UNUSED(sys);
 
+#if defined(CONFIG_SOC_SERIES_SF32LB57X)
+	if ((aon->ACR & HPSYS_AON_ACR_HXT48_RDY) != 0U) {
+#else
 	if (ll_aon_hxt48_is_ready(aon) != 0U) {
+#endif
 		return CLOCK_CONTROL_STATUS_ON;
 	}
 

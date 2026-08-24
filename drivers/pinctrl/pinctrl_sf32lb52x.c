@@ -80,11 +80,15 @@ static int pinctrl_configure_pin(pinctrl_soc_pin_t pin)
 
 	/* configure HPSYS_CFG *_PINR if applicable */
 	pinr_offset = FIELD_GET(SF32LB_PINR_OFFSET_MSK, pin);
+	#if !defined(CONFIG_SOC_SERIES_SF32LB57X)
 	if (pinr_offset != 0U) {
 		ll_cfg_set_pinr_field((HPSYS_CFG_TypeDef *)config->cfg, pinr_offset,
 				      FIELD_GET(SF32LB_PINR_FIELD_MSK, pin),
 				      FIELD_GET(SF32LB_PAD_MSK, pin));
 	}
+	#else
+	ARG_UNUSED(pinr_offset);
+	#endif
 
 	/* configure HPSYS_PINMUX */
 	switch (FIELD_GET(SF32LB_PORT_MSK, pin)) {
